@@ -87,7 +87,7 @@ SHRINK_FACTOR = 0.99
 CONF_PIECE = 0.45
 # Detection coordinate options
 SWAP_DETECTION_AXES = True  # True → swap (row, col) to align with legacy caro_gui2 mapping
-
+DEBUG_MODE = True  # Enable debug logging (set to False in production for better performance)
 # Robot configuration
 REF_POSE = {
     'X': 214.2,
@@ -725,7 +725,10 @@ class MainWindow(QMainWindow):
 
         # Game and AI state
         self.game_state = GomokuGameState(grid_size=GRID_SIZE)
-        self.move_detector = MoveDetector(grid_size=GRID_SIZE)
+        # Initialize move detector with stability threshold and debug mode
+        # stability_threshold=2: require 2 consecutive frames for stable detection
+        # debug=True: enable debug logging (set to False in production for better performance)
+        self.move_detector = MoveDetector(grid_size=GRID_SIZE, stability_threshold=2, debug= DEBUG_MODE)
         self.ai_strategy: Optional[GomokuAIStrategy] = None
         self.current_ai_depth = 1
         self.current_ai_mode = "alphazero"  # or "alphazero"
@@ -1042,9 +1045,9 @@ class MainWindow(QMainWindow):
     def _sync_move_detector_with_board(self) -> None:
         #+ Synchronize move detector with current board state
         #+
-        #+ Đồng bộ move_detector với board_state hiện tại để tránh nhầm quân cờ
-        #+ cũ (đã có trên bàn) là quân mới khi start game.
-        #+ Nên gọi sau khi có detection đầu tiên sau khi start game.
+        #+ Syncs move_detector with current board_state to avoid mistaking old pieces
+        #+ (already on the board) as new pieces when starting a game.
+        #+ Should be called after the first detection after starting a game.
         board_state = self.game_state.get_board_state()
         self.move_detector.sync_with_board_state(board_state)
 
@@ -1176,7 +1179,7 @@ class MainWindow(QMainWindow):
         msg_box.setText(message)
         msg_box.setInformativeText("Do you wanna play again?")
         
-        # Add buttons: "Chơi lại" (Yes) and "Không" (No)
+        # Add buttons: "Play again" (Yes) and "No" (No)
         btn_play_again = msg_box.addButton("Play again", QMessageBox.ButtonRole.YesRole)
         btn_no = msg_box.addButton("No", QMessageBox.ButtonRole.NoRole)
         
@@ -1402,18 +1405,18 @@ class MainWindow(QMainWindow):
         #+ Handle detection result
         #+
         #+ Updates board state display and shows annotated frame with
-        #+ detection results.
+        #+ detection results. Optimized to minimize redundant operations.
         #+
         #+ @param annotated Annotated frame with detections drawn
         #+ @param roi Board region of interest (may be None)
         #+ @param items List of detected pieces
-        # Build board state from detections (for visualization on camera frame)
-        # This is separate from game_state.board_state which is the source of truth
-        detection_board = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.int8)
-        for item in items:
-            detection_board[item.row, item.col] = item.cls_id
         
-        # Debug: Log detection items and cls_id mapping
+        # Early return if no items and not in auto play mode
+        if not items and not self.auto_play_mode:
+            self.lbl_view.setPixmap(self._np2pix(annotated))
+            return
+        
+        # Debug: Log detection items and cls_id mapping (only if items exist)
         if items:
             debug_msg = f"[DETECTION] Found {len(items)} pieces: "
             for item in items:
@@ -1427,9 +1430,11 @@ class MainWindow(QMainWindow):
         # move_detector, which compares consecutive frames.
         # The game_state.board_state is maintained by make_move() calls only.
         
-        # Refresh UI board with game state (source of truth), not detection board
-        game_board_state = self.game_state.get_board_state()
-        self._refresh_board(game_board_state)
+        # Cache board_state to avoid multiple calls to get_board_state()
+        board_state = self.game_state.get_board_state()
+        
+        # Refresh UI board with game state (source of truth)
+        self._refresh_board(board_state)
         
         # Update prefill cell if items detected
         if items:
@@ -1449,16 +1454,17 @@ class MainWindow(QMainWindow):
         
         self.lbl_view.setPixmap(self._np2pix(annotated))
 
-        # Sync move_detector với board_state nếu _last_map đang rỗng
-        # (để tránh nhầm quân cờ cũ là quân mới khi start game)
+        # Sync move_detector with board_state if _last_map is empty
+        # (to avoid mistaking old pieces as new pieces when starting a game)
+        # Only sync once when _last_map is empty (optimization: avoid repeated checks)
         if len(self.move_detector._last_map) == 0 and len(items) > 0:
-            # Frame đầu tiên sau reset: sync với board_state hiện tại
-            board_state = self.game_state.get_board_state()
-            if np.any(board_state != 0):  # Nếu board đã có quân cờ
+            if np.any(board_state != 0):  # If board already has pieces
                 self.move_detector.sync_with_board_state(board_state)
 
+        # Process move detection only if auto play mode is enabled and game is active
         if self.auto_play_mode and self.game_active:
-            move_result = self.move_detector.detect_new_move(items)
+            # Pass cached board_state to move_detector for cross-reference stability check
+            move_result = self.move_detector.detect_new_move(items, game_state=board_state)
             self._handle_move_detection(move_result)
     
     def on_connect_robot(self) -> None:
