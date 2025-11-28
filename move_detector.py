@@ -69,32 +69,86 @@ class MoveDetector:
 
     def reset(self) -> None:
         #+ Clear detection history
+        #+
+        #+ Clears _last_map so that the next frame will treat all pieces as "new".
+        #+ This is called when starting a new game.
+        print(f"[MOVE_DETECTOR] RESET: Clearing last_map (had {len(self._last_map)} pieces)")
         self._last_map.clear()
+    
+    def sync_with_board_state(self, board_state) -> None:
+        #+ Synchronize detector with current board state
+        #+
+        #+ Syncs _last_map with the current board_state to avoid mistaking old pieces
+        #+ as new pieces when starting a game where the board already has pieces.
+        #+
+        #+ @param board_state Numpy array with board state (0=empty, 1=human, 2=AI)
+        import numpy as np
+        self._last_map.clear()
+        if board_state is None:
+            return
+        
+        for row in range(board_state.shape[0]):
+            for col in range(board_state.shape[1]):
+                value = int(board_state[row, col])
+                if value > 0:  # Piece exists
+                    self._last_map[(row, col)] = value
+        
+        print(f"[MOVE_DETECTOR] SYNC: Synced with board state ({len(self._last_map)} pieces)")
 
     def detect_new_move(self, detection_items: List) -> MoveDetectionResult:
         #+ Compare current detections with previous and find new move
+        #+
+        #+ Flow:
+        #+   1. Build current_map from current detection_items
+        #+   2. Compare with _last_map (previous frame) to find new pieces
+        #+   3. Update _last_map = current_map for the next frame
+        #+
+        #+ Note: _last_map is stored in RAM (instance variable).
+        #+       Each call to detect_new_move() compares with the previous frame.
         current_map, invalid_found = self._build_map(detection_items)
+        
+        # Debug: Log current and last map for tracing
+        print(f"[MOVE_DETECTOR] Current frame: {len(current_map)} pieces, Last frame: {len(self._last_map)} pieces")
+        if current_map:
+            print(f"[MOVE_DETECTOR] Current pieces: {list(current_map.keys())}")
+        if self._last_map:
+            print(f"[MOVE_DETECTOR] Last pieces: {list(self._last_map.keys())}")
+        
         if invalid_found:
+            print(f"[MOVE_DETECTOR] INVALID: Found invalid coordinates in detection")
             self._last_map = current_map
             return MoveDetectionResult(MoveStatus.INVALID)
+        
+        # Find new positions (exist in current_map but NOT in _last_map)
         new_positions = [coord for coord in current_map if coord not in self._last_map]
+        print(f"[MOVE_DETECTOR] New positions found: {new_positions}")
 
         if len(new_positions) == 0:
+            # No change: all pieces already existed in previous frame
+            print(f"[MOVE_DETECTOR] NO_CHANGE: No new pieces detected")
             self._last_map = current_map
             return MoveDetectionResult(MoveStatus.NO_CHANGE)
 
         if len(new_positions) > 1:
+            # More than 1 new piece → possibly due to unstable YOLO detection
+            print(f"[MOVE_DETECTOR] MULTIPLE_NEW: Found {len(new_positions)} new pieces: {new_positions}")
             self._last_map = current_map
             return MoveDetectionResult(MoveStatus.MULTIPLE_NEW)
 
+        # Exactly 1 new piece → this is a valid move
         (row, col) = new_positions[0]
         cls_id = current_map[(row, col)]
+        print(f"[MOVE_DETECTOR] NEW_MOVE candidate: ({row},{col}) cls_id={cls_id}")
+        
         # Validate coordinates
         if not self._is_valid_coord(row, col) or cls_id <= 0:
+            print(f"[MOVE_DETECTOR] INVALID: Coordinates invalid or cls_id <= 0")
             self._last_map = current_map
             return MoveDetectionResult(MoveStatus.INVALID)
 
+        # Update _last_map = current_map so next frame compares with this frame
         self._last_map = current_map
+        print(f"[MOVE_DETECTOR] ✓ NEW_MOVE confirmed: ({row},{col}) cls_id={cls_id}")
         return MoveDetectionResult(MoveStatus.NEW_MOVE, row=row, col=col, cls_id=cls_id)
 
     def _build_map(self, detection_items: List) -> Tuple[Dict[Tuple[int, int], int], bool]:

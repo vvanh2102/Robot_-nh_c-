@@ -79,12 +79,14 @@ BOARD_MODEL_PATH = "/home/ubuntu/FInal_gomoku_project_AI/Image_processing/Robot_
 PIECE_MODEL_PATH = "/home/ubuntu/FInal_gomoku_project_AI/Image_processing/Robot_-nh_c-/last.pt"
 RUNS_DIR = "/home/ubuntu/FInal_gomoku_project_AI/Image_processing/Robot_-nh_c-/runs"
 os.makedirs(RUNS_DIR, exist_ok=True)
-CAMERA_INDEX : int = 4
+CAMERA_INDEX : int = 6
 CELL_SIZE : int = 60
 # Game configuration
 GRID_SIZE = 13
 SHRINK_FACTOR = 0.99
 CONF_PIECE = 0.45
+# Detection coordinate options
+SWAP_DETECTION_AXES = True  # True → swap (row, col) to align with legacy caro_gui2 mapping
 
 # Robot configuration
 REF_POSE = {
@@ -484,6 +486,13 @@ class DetectionWorker(QThread):
         def clamp_to_grid(value: float) -> int:
             """Clamp value to valid grid index range."""
             return int(max(0, min(GRID_SIZE - 1, int(round(value)))))
+
+        def normalize_coords(row: int, col: int) -> Tuple[int, int]:
+            """Normalize detection grid coordinates based on swap flags."""
+            if SWAP_DETECTION_AXES:
+                row, col = col, row
+            # Values already clamped; return directly
+            return row, col
         
         for idx, (bx1, by1, bx2, by2) in enumerate(boxes_xyxy):
             # Calculate center point
@@ -497,6 +506,9 @@ class DetectionWorker(QThread):
             # Convert to grid coordinates
             col = clamp_to_grid((abs_u - roi.x1) / step_x)
             row = clamp_to_grid((abs_v - roi.y1) / step_y)
+            
+            # Normalize coordinates (swap axes if enabled)
+            row, col = normalize_coords(row, col)
             
             # Class ID: 0 -> player 1 (value 1), else -> player 2 (value 2)
             class_id = 1 if classes[idx] == 0 else 2
@@ -1026,6 +1038,15 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Game state reset.")
         # Clear board view
         self._refresh_board(np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.int8))
+    
+    def _sync_move_detector_with_board(self) -> None:
+        #+ Synchronize move detector with current board state
+        #+
+        #+ Đồng bộ move_detector với board_state hiện tại để tránh nhầm quân cờ
+        #+ cũ (đã có trên bàn) là quân mới khi start game.
+        #+ Nên gọi sau khi có detection đầu tiên sau khi start game.
+        board_state = self.game_state.get_board_state()
+        self.move_detector.sync_with_board_state(board_state)
 
     def _configure_ai_strategy(self, depth: int, mode: str = "minimax") -> None:
         #+ Configure AI strategy with the specified engine and search depth
@@ -1427,6 +1448,14 @@ class MainWindow(QMainWindow):
         )
         
         self.lbl_view.setPixmap(self._np2pix(annotated))
+
+        # Sync move_detector với board_state nếu _last_map đang rỗng
+        # (để tránh nhầm quân cờ cũ là quân mới khi start game)
+        if len(self.move_detector._last_map) == 0 and len(items) > 0:
+            # Frame đầu tiên sau reset: sync với board_state hiện tại
+            board_state = self.game_state.get_board_state()
+            if np.any(board_state != 0):  # Nếu board đã có quân cờ
+                self.move_detector.sync_with_board_state(board_state)
 
         if self.auto_play_mode and self.game_active:
             move_result = self.move_detector.detect_new_move(items)
