@@ -43,7 +43,7 @@ CENTER_OFFSET_MM: float = CELL_MM / 2.0
 
 # Coordinate transformation flags
 # Enable if your board system has axis inversion when converting row/col
-AXIS_SWAP: bool = False  # True: swap row<->col in grid_to_board_mm()
+AXIS_SWAP: bool = True   # True: swap row<->col in grid_to_board_mm()
 FLIP_ROW: bool = True    # Flip row: r -> (GRID_SIZE - 1) - r
 FLIP_COL: bool = True    # Flip column: c -> (GRID_SIZE - 1) - c
 

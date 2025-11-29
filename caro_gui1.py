@@ -84,7 +84,8 @@ CELL_SIZE : int = 60
 # Game configuration
 GRID_SIZE = 13
 SHRINK_FACTOR = 0.99
-CONF_PIECE = 0.45
+CONF_PIECE = 0.35  # Lowered from 0.45 for better detection
+DETECTION_STABILITY_FRAMES = 3  # Number of consecutive frames required for stable detection
 
 # Robot configuration
 REF_POSE = {
@@ -270,7 +271,7 @@ class DetectionWorker(QThread):
     ):
         #+ Initialize detection worker
         #+
-        #+ @param conf_piece Confidence threshold for piece detection (default: 0.45)
+        #+ @param conf_piece Confidence threshold for piece detection (default: 0.35)
         #+ @param shrink Shrink factor for board ROI (default: 0.99)
         #+ @param parent Parent widget
         super().__init__(parent)
@@ -282,12 +283,19 @@ class DetectionWorker(QThread):
         self._running = False
         self.board_model: Optional[YOLO] = None
         self.piece_model: Optional[YOLO] = None
+
+        # Temporal filtering for stable detections
+        self._detection_history: List[List[Tuple[int, int, int]]] = []  # List of frames, each frame is list of (row, col, cls_id)
+        self._max_history_len = DETECTION_STABILITY_FRAMES
     
     def set_running(self, running: bool) -> None:
         #+ Set detection running state
         #+
         #+ @param running True to enable detection, False to disable
         self._running = running
+        # Clear detection history when starting detection
+        if running:
+            self._detection_history.clear()
     
     def update_frame(self, frame: np.ndarray) -> None:
         #+ Update the frame to be processed
@@ -398,6 +406,48 @@ class DetectionWorker(QThread):
         
         return None
     
+    def _filter_stable_detections(self, current_detections: List[Tuple[int, int, int]]) -> List[Tuple[int, int, int]]:
+        #+ Filter detections to only keep stable ones across multiple frames
+        #+
+        #+ Implements temporal filtering by tracking detections across consecutive
+        #+ frames and only returning pieces that appear consistently.
+        #+
+        #+ @param current_detections List of (row, col, cls_id) tuples from current frame
+        #+
+        #+ @return List of stable detections (row, col, cls_id)
+
+        # Add current detections to history
+        self._detection_history.append(current_detections)
+
+        # Keep only recent frames
+        if len(self._detection_history) > self._max_history_len:
+            self._detection_history.pop(0)
+
+        # If we don't have enough history yet, return current detections
+        # (first few frames won't be filtered)
+        if len(self._detection_history) < self._max_history_len:
+            return current_detections
+
+        # Count occurrences of each detection across history
+        detection_counts = {}
+        for frame_detections in self._detection_history:
+            seen_in_frame = set()
+            for row, col, cls_id in frame_detections:
+                key = (row, col, cls_id)
+                seen_in_frame.add(key)
+
+            # Increment count for each unique detection in this frame
+            for key in seen_in_frame:
+                detection_counts[key] = detection_counts.get(key, 0) + 1
+
+        # Only keep detections that appear in ALL recent frames
+        stable_detections = [
+            key for key, count in detection_counts.items()
+            if count >= self._max_history_len
+        ]
+
+        return stable_detections
+
     def _draw_grid(self, img: np.ndarray, roi: BoardROI) -> None:
         #+ Draw grid overlay on image
         #+
@@ -480,42 +530,58 @@ class DetectionWorker(QThread):
         # Process detections
         boxes_xyxy = piece_result.boxes.xyxy.cpu().numpy()
         classes = piece_result.boxes.cls.cpu().numpy().astype(int)
-        
+
         def clamp_to_grid(value: float) -> int:
             """Clamp value to valid grid index range."""
             return int(max(0, min(GRID_SIZE - 1, int(round(value)))))
-        
+
+        # First pass: collect all raw detections with pixel coordinates
+        raw_detections = []  # List of (row, col, cls_id, abs_u, abs_v)
+
         for idx, (bx1, by1, bx2, by2) in enumerate(boxes_xyxy):
             # Calculate center point
             center_x = (bx1 + bx2) / 2
             center_y = (by1 + by2) / 2
-            
+
             # Convert to absolute pixel coordinates
             abs_u = int(roi.x1 + center_x)
             abs_v = int(roi.y1 + center_y)
-            
+
             # Convert to grid coordinates
             col = clamp_to_grid((abs_u - roi.x1) / step_x)
             row = clamp_to_grid((abs_v - roi.y1) / step_y)
-            
+
             # Class ID: 0 -> player 1 (value 1), else -> player 2 (value 2)
             class_id = 1 if classes[idx] == 0 else 2
-            
-            items.append(DetectionItem(row, col, class_id, abs_u, abs_v))
-            
-            # Draw detection on annotated frame
-            color = (0, 255, 0) if class_id == 1 else (0, 255, 255)
-            cv2.circle(annotated, (abs_u, abs_v), 6, color, -1)
-            cv2.putText(
-                annotated,
-                f"{row},{col}",
-                (abs_u + 6, abs_v - 6),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                color,
-                1
-            )
-        
+
+            raw_detections.append((row, col, class_id, abs_u, abs_v))
+
+        # Apply temporal filtering
+        current_frame_detections = [(r, c, cls) for r, c, cls, _, _ in raw_detections]
+        stable_detections = self._filter_stable_detections(current_frame_detections)
+        stable_set = set(stable_detections)
+
+        # Second pass: only create DetectionItems for stable detections
+        for row, col, class_id, abs_u, abs_v in raw_detections:
+            if (row, col, class_id) in stable_set:
+                items.append(DetectionItem(row, col, class_id, abs_u, abs_v))
+
+                # Draw detection on annotated frame (only stable ones)
+                color = (0, 255, 0) if class_id == 1 else (0, 255, 255)
+                cv2.circle(annotated, (abs_u, abs_v), 6, color, -1)
+                cv2.putText(
+                    annotated,
+                    f"{row},{col}",
+                    (abs_u + 6, abs_v - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55,
+                    color,
+                    1
+                )
+            else:
+                # Draw unstable detections in gray (for debugging)
+                cv2.circle(annotated, (abs_u, abs_v), 4, (128, 128, 128), 1)
+
         return annotated, roi, items
 
 # ============================================================================
