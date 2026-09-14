@@ -65,7 +65,6 @@ from move_detector import MoveDetector, MoveStatus
 # YOLO imports
 try:
     from ultralytics import YOLO
-
     _YOLO_AVAILABLE = True
 except Exception as e:
     _YOLO_AVAILABLE = False
