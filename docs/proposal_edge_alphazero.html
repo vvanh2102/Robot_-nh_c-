@@ -1,0 +1,509 @@
+<title>Edge AlphaZero Proposal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #f6f4ef;
+    --surface: #ffffff;
+    --surface-alt: #eeeae0;
+    --text: #1e2420;
+    --text-muted: #5c665f;
+    --accent: #2e6b4c;
+    --accent-strong: #1e4a34;
+    --accent-soft: #e4ede7;
+    --border: #ddd8cb;
+    --shadow: 0 1px 2px rgba(30, 36, 32, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121613;
+      --surface: #181e1a;
+      --surface-alt: #1f2620;
+      --text: #e8ece6;
+      --text-muted: #96a49a;
+      --accent: #74d1a2;
+      --accent-strong: #9be3bd;
+      --accent-soft: #1c2b23;
+      --border: #2a332c;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121613;
+    --surface: #181e1a;
+    --surface-alt: #1f2620;
+    --text: #e8ece6;
+    --text-muted: #96a49a;
+    --accent: #74d1a2;
+    --accent-strong: #9be3bd;
+    --accent-soft: #1c2b23;
+    --border: #2a332c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    padding-inline: 20px;
+    padding-block: 48px 80px;
+  }
+
+  .page {
+    max-width: 740px;
+    margin: 0 auto;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    position: relative;
+    padding: 40px 36px 34px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .board-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle, var(--border) 1px, transparent 1.4px);
+    background-size: 24px 24px;
+    background-position: -6px -6px;
+    opacity: 0.55;
+    mask-image: linear-gradient(to bottom right, black, transparent 70%);
+    -webkit-mask-image: linear-gradient(to bottom right, black, transparent 70%);
+  }
+  .eyebrow {
+    position: relative;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-strong);
+    font-weight: 500;
+    margin: 0 0 14px;
+  }
+  h1 {
+    position: relative;
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(1.5rem, 4vw, 2.05rem);
+    line-height: 1.22;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 12px;
+    max-width: 30ch;
+  }
+  .dek {
+    position: relative;
+    color: var(--text-muted);
+    font-size: 1.02rem;
+    max-width: 46ch;
+    margin: 0 0 26px;
+  }
+  .meta {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .meta-item {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+  }
+  .meta-item .k {
+    display: block;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 10px;
+    margin-bottom: 3px;
+  }
+  .meta-item .v { color: var(--text); }
+
+  /* ---------- Sections ---------- */
+  main { margin-top: 6px; }
+  section {
+    padding: 30px 2px;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-child { border-bottom: none; }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .sec-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  h2 {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.28rem;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  .sec-body { max-width: 66ch; }
+  .sec-body p { margin: 0 0 12px; }
+  .sec-body p:last-child { margin-bottom: 0; }
+  .lede {
+    font-size: 1.03rem;
+    color: var(--text);
+  }
+
+  .rq-box {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+    padding: 16px 20px;
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-style: italic;
+    font-size: 1.05rem;
+    line-height: 1.55;
+    color: var(--text);
+    max-width: 66ch;
+  }
+
+  ul.contrib {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  ul.contrib li {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 10px;
+    align-items: start;
+  }
+  ul.contrib .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border-radius: 3px;
+    width: 26px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+  }
+  ul.contrib strong { font-weight: 600; }
+
+  /* ---------- Hardware tier bars ---------- */
+  .tier-table {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 18px 0 8px;
+  }
+  .tier-row {
+    display: grid;
+    grid-template-columns: 96px 1fr 84px;
+    align-items: center;
+    gap: 14px;
+  }
+  .tier-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  .tier-track {
+    height: 9px;
+    background: var(--surface-alt);
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .tier-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 5px 0 0 5px;
+  }
+  .tier-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .tier-note {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  /* ---------- Data tables ---------- */
+  .table-wrap { overflow-x: auto; margin: 16px 0 4px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 480px;
+    font-size: 13.5px;
+  }
+  th, td {
+    text-align: left;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  td.num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+  tr:last-child td { border-bottom: none; }
+
+  /* ---------- Phases ---------- */
+  .phases {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-top: 6px;
+    border-left: 2px solid var(--border);
+    padding-left: 20px;
+  }
+  .phase {
+    position: relative;
+    padding: 4px 0 22px;
+  }
+  .phase:last-child { padding-bottom: 0; }
+  .phase::before {
+    content: "";
+    position: absolute;
+    left: -25px;
+    top: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    outline: 2px solid var(--accent);
+  }
+  .phase-title {
+    font-weight: 600;
+    font-size: 0.98rem;
+    margin-bottom: 4px;
+  }
+  .phase-desc {
+    color: var(--text-muted);
+    font-size: 13.5px;
+    max-width: 58ch;
+  }
+
+  .asset-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .asset-list li {
+    padding-left: 18px;
+    position: relative;
+    font-size: 14.5px;
+    color: var(--text);
+  }
+  .asset-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 9px;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 1px;
+    transform: rotate(45deg);
+  }
+  .asset-list .status {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 8px;
+    letter-spacing: 0.03em;
+  }
+
+  footer {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  @media (max-width: 520px) {
+    header { padding: 30px 22px 26px; }
+    .tier-row { grid-template-columns: 74px 1fr 70px; gap: 8px; }
+    th, td { padding: 8px 10px; }
+  }
+</style>
+
+<div class="page">
+  <header>
+    <div class="board-grid" aria-hidden="true"></div>
+    <p class="eyebrow">Research Proposal Draft</p>
+    <h1>Adaptive Simulation-Budget Allocation for AlphaZero-MCTS on Heterogeneous Edge Hardware</h1>
+    <p class="dek">Resource-aware game-tree search under real-time deadlines, evaluated on a Raspberry Pi Zero–to–PC hardware spread, for an embodied Gomoku-playing robot.</p>
+    <div class="meta">
+      <div class="meta-item"><span class="k">Field</span><span class="v">Edge AI / Embedded Systems</span></div>
+      <div class="meta-item"><span class="k">Base system</span><span class="v">Robot Gomoku (13×13), branch vuvananh_intergration</span></div>
+      <div class="meta-item"><span class="k">Date</span><span class="v">September 2026</span></div>
+      <div class="meta-item"><span class="k">Status</span><span class="v">Draft — for advisor review</span></div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="sec-head"><span class="sec-num">01</span><h2>Motivation</h2></div>
+      <div class="sec-body">
+        <p class="lede">The applicant maintains a working robot that plays 13×13 Gomoku: a 3-DOF arm with vacuum gripper, an eye-in-hand camera, and a two-model YOLO perception pipeline feed a <code>GomokuAIStrategy</code> module offering both Minimax/Alpha–Beta and an AlphaZero/MCTS adapter (10 residual blocks, 40 filters, 200 simulations, 4 parallel branches). Compute is currently split informally across a PC, a Raspberry Pi 3, and a Jetson NX, with no policy governing which device runs the search or at what budget.</p>
+        <p>This asymmetry between available compute and a single fixed search configuration is the starting point for this proposal.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">02</span><h2>Research question</h2></div>
+      <div class="sec-body">
+        <div class="rq-box">Given a fixed decision deadline — set by the robot's real pick-and-place cycle time — which combination of network size and MCTS simulation budget maximizes playing strength on a given device tier, and does a policy that adapts this combination per move outperform any single fixed configuration under the same average time budget?</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">03</span><h2>Gap in prior work</h2></div>
+      <div class="sec-body">
+        <p>Split-computing literature (Neurosurgeon, BottleNet, and 2024–2025 follow-ups) addresses layer-wise partitioning of a single streaming vision model between edge and cloud. It does not transfer directly to a periodic, single-shot search problem like AlphaZero-MCTS, where the unit of work is a full move decision rather than a video frame. The applicable literature is instead anytime-algorithm and resource-adaptive inference work — thinner for tree search on genuinely constrained hardware such as a Cortex-A single-board computer.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">04</span><h2>Hardware spread</h2></div>
+      <div class="sec-body">
+        <p>Four tiers, from a device too constrained to run the reference network to one with no meaningful ceiling:</p>
+        <div class="tier-table">
+          <div class="tier-row">
+            <span class="tier-name">Pi Zero W</span>
+            <div class="tier-track"><div class="tier-fill" style="width: 6%;"></div></div>
+            <span class="tier-val">512 MB</span>
+          </div>
+          <div class="tier-row">
+            <span class="tier-name">Pi 3</span>
+            <div class="tier-track"><div class="tier-fill" style="width: 12%;"></div></div>
+            <span class="tier-val">1 GB</span>
+          </div>
+          <div class="tier-row">
+            <span class="tier-name">Jetson NX</span>
+            <div class="tier-track"><div class="tier-fill" style="width: 95%;"></div></div>
+            <span class="tier-val">8 GB + GPU</span>
+          </div>
+          <div class="tier-row">
+            <span class="tier-name">PC</span>
+            <div class="tier-track"><div class="tier-fill" style="width: 100%; background: var(--text-muted);"></div></div>
+            <span class="tier-val">reference</span>
+          </div>
+        </div>
+        <p class="tier-note">Bars indicate RAM on a log scale, as a proxy for the network sizes each tier can hold. The Pi Zero has no GPU and is expected to require a network compressed well below the reference (10 blocks / 40 filters) and a single MCTS branch rather than four.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">05</span><h2>Proposed contributions</h2></div>
+      <div class="sec-body">
+        <ul class="contrib">
+          <li><span class="tag">01</span><span><strong>Strength–latency Pareto curves</strong> across network configurations (block/filter count, INT8 quantization) and all four device tiers, including a Cortex-A-only tier rarely reported in split/anytime-inference literature.</span></li>
+          <li><span class="tag">02</span><span><strong>An adaptive simulation-budget policy</strong> that selects network size and simulation count per move from remaining decision time and board-state complexity, rather than the system's current fixed 200-simulation budget.</span></li>
+          <li><span class="tag">03</span><span><strong>A deadline grounded in the real system:</strong> derived analytically from the robot's documented pick-and-place motion timing, not an arbitrary constant.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">06</span><h2>Evaluation plan</h2></div>
+      <div class="sec-body">
+        <p>All evaluation runs through the existing console / Virtual Play mode against the shared <code>GomokuAIStrategy</code> API — no physical robot run is required for these results.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Metric</th><th>Method</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Elo rating</td><td>Self-play tournament, AlphaZero configuration vs. configuration</td><td>Primary — resolves fine-grained strength differences</td></tr>
+              <tr><td>Win rate</td><td>Vs. existing Minimax depth 1–3 baseline</td><td>Sanity check only; expected to saturate</td></tr>
+              <tr><td>Decision latency</td><td>Wall-clock time per move, per device</td><td>Feasibility bound</td></tr>
+              <tr><td>Throughput</td><td>MCTS nodes/second, per device</td><td>Hardware characterization</td></tr>
+              <tr><td>Memory footprint</td><td>Peak RAM during inference</td><td>Confirms tier feasibility</td></tr>
+              <tr><td>Adaptive vs. fixed</td><td>Mean strength under matched total time budget</td><td>Headline comparison</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">07</span><h2>Work plan</h2></div>
+      <div class="sec-body">
+        <div class="phases">
+          <div class="phase">
+            <div class="phase-title">Phase 1 — Baseline profiling</div>
+            <div class="phase-desc">Run the trained checkpoint at varying network sizes and simulation budgets on each device tier; record latency, throughput, and memory to establish the raw Pareto surface.</div>
+          </div>
+          <div class="phase">
+            <div class="phase-title">Phase 2 — Adaptive policy design</div>
+            <div class="phase-desc">Build a rule-based policy that selects configuration from remaining time and position complexity; extend to a learned policy if time allows.</div>
+          </div>
+          <div class="phase">
+            <div class="phase-title">Phase 3 — Self-play evaluation</div>
+            <div class="phase-desc">Run adaptive vs. fixed-budget tournaments and Elo comparisons across configurations entirely through console / Virtual Play, under the analytically derived deadline.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">08</span><h2>Feasibility &amp; existing assets</h2></div>
+      <div class="sec-body">
+        <ul class="asset-list">
+          <li>Trained AlphaZero checkpoint <span class="status">in hand</span></li>
+          <li><code>GomokuAIStrategy</code> adapter exposing both Minimax and AlphaZero behind one API <span class="status">in repo</span></li>
+          <li>Virtual Play mode for AI-vs-AI testing without camera or robot <span class="status">in repo</span></li>
+          <li>Minimax depth 1–3 baseline for sanity-check comparisons <span class="status">in repo</span></li>
+          <li>Documented real pick-and-place motion timing, for deriving the deadline constant <span class="status">documented</span></li>
+          <li>Pi Zero, Pi 3, Jetson NX, and PC hardware <span class="status">available</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">09</span><h2>Future work</h2></div>
+      <div class="sec-body">
+        <p>The vacuum gripper carries no pressure feedback, so the system currently commits an AI move to game state without confirming the piece was actually picked up. A lightweight binary classifier reading the eye-in-hand camera after the lift step — gripped vs. empty, nothing else — could close that gap, but requires physical data collection distinct from this proposal's console-only evaluation. It is noted here as a natural next step, outside the present scope.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>Draft prepared for advisor review — Edge AI graduate application, Taiwan</footer>
+</div>
