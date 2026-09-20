@@ -1,0 +1,29 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.env
+.venv/
+venv/
+env/
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Ultralytics/YOLO
+runs/
+weights/
+datasets/
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Misc
+.DS_Store
+*.log
